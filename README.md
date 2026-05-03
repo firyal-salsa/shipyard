@@ -87,3 +87,6 @@ Users → HAProxy (Active)
 | Container Registry| Docker Registry                 |
 
 ---
+
+## Source
+https://medium.com/@tronghai/green-blue-deployment-with-haproxy-c6a3d7a71b94
