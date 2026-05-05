@@ -29,10 +29,7 @@ The infrastructure runs entirely on a **Linux host with Docker** and is divided 
 - **App – Canary (V1.1)**: limited traffic version for gradual rollout
 
 ### 3. Shared Services
-- **PostgreSQL Database**: master + 2 replicas for read scalability
-- **Redis Cache**: for caching and performance optimization
-- **Health Check Monitor**: monitors application and infrastructure health
-
+- Uptime Kuma : for monitoring services 
 ---
 
 ## 🔵🟢 Blue-Green Deployment
@@ -87,3 +84,10 @@ Users → HAProxy (Active)
 | Container Registry| Docker Registry                 |
 
 ---
+
+## How it works
+
+
+
+## Source
+https://medium.com/@tronghai/green-blue-deployment-with-haproxy-c6a3d7a71b94

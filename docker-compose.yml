@@ -1,0 +1,145 @@
+version: "3.9"
+
+# =============================================================
+# NETWORK
+# =============================================================
+networks:
+  public_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true  # no direct internet access
+
+# =============================================================
+# SERVICES
+# =============================================================
+services:
+
+  # -----------------------------------------------------------
+  # EDGE LAYER — HAProxy Active (Primary Load Balancer)
+  # -----------------------------------------------------------
+  haproxy-active:
+    image: haproxy:2.9-alpine
+    container_name: haproxy-active
+    user: root
+    command: sh -c "apk add --no-cache socat && haproxy -f /usr/local/etc/haproxy/haproxy.cfg"
+    ports:
+      - "443:443"   # HTTPS (SSL Termination)
+      - "80:80"     # HTTP → redirect to HTTPS
+      - "9000:9000" # HAProxy Stats Dashboard
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy/certs:/etc/haproxy/certs:ro
+    networks:
+      - public_net
+      - internal_net
+    depends_on:
+      - app-blue
+      - app-green
+      - app-canary
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # -----------------------------------------------------------
+  # EDGE LAYER — HAProxy Standby (Failover)
+  # In real production: use Keepalived + VRRP on separate hosts
+  # Here we simulate with a second HAProxy instance
+  # -----------------------------------------------------------
+  haproxy-standby:
+    image: haproxy:2.9-alpine
+    container_name: haproxy-standby
+    user: root
+    command: sh -c "apk add --no-cache socat && haproxy -f /usr/local/etc/haproxy/haproxy.cfg"
+    ports:
+      - "8443:443"   # Standby HTTPS (exposed separately for testing)
+      - "9001:9000"  # Standby Stats Dashboard
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy/certs:/etc/haproxy/certs:ro
+    networks:
+      - public_net
+      - internal_net
+    depends_on:
+      - app-blue
+      - app-green
+      - app-canary
+    restart: unless-stopped
+
+  # -----------------------------------------------------------
+  # APPLICATION LAYER — Blue (V1.0, stable / production)
+  # -----------------------------------------------------------
+  app-blue:
+    image: nginx:alpine
+    container_name: app-blue
+    environment:
+      - APP_VERSION=Blue-V1.0
+    volumes:
+      - ./apps/blue/index.html:/usr/share/nginx/html/index.html:ro
+      - ./apps/blue/health.html:/usr/share/nginx/html/health:ro
+    networks:
+      - internal_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # -----------------------------------------------------------
+  # APPLICATION LAYER — Green (V1.1, next version / standby)
+  # -----------------------------------------------------------
+  app-green:
+    image: nginx:alpine
+    container_name: app-green
+    environment:
+      - APP_VERSION=Green-V1.1
+    volumes:
+      - ./apps/green/index.html:/usr/share/nginx/html/index.html:ro
+      - ./apps/green/health.html:/usr/share/nginx/html/health:ro
+    networks:
+      - internal_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # -----------------------------------------------------------
+  # APPLICATION LAYER — Canary (V1.1, 5% traffic)
+  # -----------------------------------------------------------
+  app-canary:
+    image: nginx:alpine
+    container_name: app-canary
+    environment:
+      - APP_VERSION=Canary-V1.1
+    volumes:
+      - ./apps/canary/index.html:/usr/share/nginx/html/index.html:ro
+      - ./apps/canary/health.html:/usr/share/nginx/html/health:ro
+    networks:
+      - internal_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # -----------------------------------------------------------
+  # SHARED SERVICES — Health Check Monitor (Uptime Kuma)
+  # -----------------------------------------------------------
+  health-monitor:
+    image: louislam/uptime-kuma:1
+    container_name: health-monitor
+    ports:
+      - "3001:3001"   # Dashboard: http://localhost:3001
+    volumes:
+      - ./uptime-kuma:/app/data
+    networks:
+      - public_net
+      - internal_net
+    restart: unless-stopped
